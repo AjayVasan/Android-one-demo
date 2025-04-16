@@ -13,6 +13,9 @@
         android:theme="@style/Theme.DemoApplication"
         tools:targetApi="31">
         <activity
+            android:name=".AddAddress"
+            android:exported="false" />
+        <activity
             android:name=".ItemAction"
             android:exported="false" />
         <activity

@@ -2,56 +2,62 @@ package com.example.demoapplication
 
 import android.content.Intent
 import android.os.Bundle
-import android.view.LayoutInflater
-import android.view.View
-import android.view.ViewGroup
-import android.widget.Button
-import android.widget.ImageButton
-import android.widget.PopupMenu
-import android.widget.TextView
-import androidx.activity.enableEdgeToEdge
+import android.util.Log
+import android.view.*
+import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.*
 
 class Address : AppCompatActivity() {
+
     private lateinit var recyclerView: RecyclerView
     private lateinit var emptyStateText: TextView
     private lateinit var addAddressButton: Button
     private lateinit var addressAdapter: AddressAdapter
+    private lateinit var databaseRef: DatabaseReference
+    private val TAG = "AddressActivity"
 
-    // Sample data class for Address
     data class AddressModel(
-        val id: String,
-        val name: String,
-        val line1: String,
-        val line2: String?,
-        val city: String,
-        val state: String,
-        val zip: String,
-        val country: String,
-        val phone: String?,
-        var isDefault: Boolean = false
+        val id: String = "",
+        val name: String = "",
+        val line1: String = "",
+        val line2: String = "",
+        val city: String = "",
+        val state: String = "",
+        val zip: String = "",
+        val country: String = "",
+        val phone: String = "",
+        var Default: Boolean = false
     )
 
-    // Example list of addresses
     private val addresses = mutableListOf<AddressModel>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
         setContentView(R.layout.activity_address)
 
-        // Initialize views
         recyclerView = findViewById(R.id.addressesRecyclerView)
         emptyStateText = findViewById(R.id.emptyStateText)
         addAddressButton = findViewById(R.id.addAddressButton)
 
-        // Set up toolbar
-        setSupportActionBar(findViewById(R.id.toolbar))
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        // Initialize database reference
+        // Use the current user's ID if authenticated, otherwise use a fixed ID
+        val userId = FirebaseAuth.getInstance().currentUser?.uid ?: "user123"
+
+        // Log to confirm path
+        Log.d(TAG, "Current user ID: $userId")
+        Log.d(TAG, "Database path: addresses/$userId")
+
+        databaseRef = FirebaseDatabase.getInstance().getReference("addresses").child(userId)
+        Log.d(TAG, "Full database path: ${databaseRef}")
 
         // Set up RecyclerView
+        recyclerView.layoutManager = LinearLayoutManager(this)
+
+        // Initialize adapter
         addressAdapter = AddressAdapter(
             addresses,
             onEditClick = { address -> editAddress(address) },
@@ -59,132 +65,151 @@ class Address : AppCompatActivity() {
             onDeleteClick = { address -> deleteAddress(address) }
         )
 
-        recyclerView.apply {
-            layoutManager = LinearLayoutManager(this@Address)
-            adapter = addressAdapter
-        }
+        recyclerView.adapter = addressAdapter
 
-        // Add address button click listener
         addAddressButton.setOnClickListener {
-            navigateToAddAddress()
+            val intent = Intent(this, AddAddress::class.java)
+            startActivity(intent)
         }
 
-        // Load addresses from your data source
+        // Load addresses when activity is created
+        loadAddresses()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Reload addresses when returning to this activity
         loadAddresses()
     }
 
     private fun loadAddresses() {
-        // Here you would typically load addresses from your data source (API, database, etc.)
-        // For this example, we'll just use some sample data
+        Log.d(TAG, "Loading addresses...")
 
-        // Clear existing addresses
-        addresses.clear()
+        // Use a ValueEventListener for real-time updates
+        databaseRef.addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                Log.d(TAG, "Data changed. Has children: ${snapshot.hasChildren()}")
+                Log.d(TAG, "Raw snapshot: ${snapshot.getValue()}")
 
-        // Add sample addresses (replace with your actual data loading logic)
-        addresses.add(
-            AddressModel(
-                id = "1",
-                name = "Home",
-                line1 = "123 Main Street",
-                line2 = "Apt 4B",
-                city = "San Francisco",
-                state = "CA",
-                zip = "94105",
-                country = "USA",
-                phone = "555-123-4567",
-                isDefault = true
-            )
-        )
+                addresses.clear()
 
-        addresses.add(
-            AddressModel(
-                id = "2",
-                name = "Work",
-                line1 = "456 Business Ave",
-                line2 = null,
-                city = "San Francisco",
-                state = "CA",
-                zip = "94107",
-                country = "USA",
-                phone = "555-987-6543",
-                isDefault = false
-            )
-        )
+                if (snapshot.exists() && snapshot.hasChildren()) {
+                    for (child in snapshot.children) {
+                        try {
+                            // Log the raw data for debugging
+                            Log.d(TAG, "Raw data for child: ${child.key} = ${child.value}")
 
-        // Update UI
-        updateUI()
+                            // Try to get each field individually for more detailed debugging
+                            val id = child.child("id").getValue(String::class.java) ?: child.key ?: ""
+                            val name = child.child("name").getValue(String::class.java) ?: ""
+                            val line1 = child.child("line1").getValue(String::class.java) ?: ""
+                            val line2 = child.child("line2").getValue(String::class.java) ?: ""
+                            val city = child.child("city").getValue(String::class.java) ?: ""
+                            val state = child.child("state").getValue(String::class.java) ?: ""
+                            val zip = child.child("zip").getValue(String::class.java) ?: ""
+                            val country = child.child("country").getValue(String::class.java) ?: ""
+                            val phone = child.child("phone").getValue(String::class.java) ?: ""
+                            val Default = child.child("Default").getValue(Boolean::class.java) ?: false
+
+                            // Create the object manually
+                            val address = AddressModel(
+                                id = id,
+                                name = name,
+                                line1 = line1,
+                                line2 = line2,
+                                city = city,
+                                state = state,
+                                zip = zip,
+                                country = country,
+                                phone = phone,
+                                Default = Default
+                            )
+
+                            Log.d(TAG, "Constructed address: ${address.name}, ID: ${address.id}")
+                            addresses.add(address)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error parsing address: ${e.message}", e)
+                        }
+                    }
+                    Log.d(TAG, "Loaded ${addresses.size} addresses")
+                } else {
+                    Log.d(TAG, "No addresses found in database")
+                }
+
+                updateUI()
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e(TAG, "Database error: ${error.message}")
+                Toast.makeText(baseContext, "Failed to load addresses: ${error.message}",
+                    Toast.LENGTH_SHORT).show()
+            }
+        })
     }
 
-    private fun updateUI() {
-        if (addresses.isEmpty()) {
-            recyclerView.visibility = View.GONE
-            emptyStateText.visibility = View.VISIBLE
-        } else {
-            recyclerView.visibility = View.VISIBLE
-            emptyStateText.visibility = View.GONE
-            addressAdapter.notifyDataSetChanged()
+    private fun setDefaultAddress(address: AddressModel) {
+        // First set all addresses to non-default
+        for (addr in addresses) {
+            val isNowDefault = addr.id == address.id
+            Log.d(TAG, "Setting address ${addr.id} default status to $isNowDefault")
+            databaseRef.child(addr.id).child("Default").setValue(isNowDefault)
+                .addOnSuccessListener {
+                    Log.d(TAG, "Successfully updated default status for ${addr.id}")
+                }
+                .addOnFailureListener { e ->
+                    Log.e(TAG, "Failed to update default status: ${e.message}")
+                }
+        }
+
+        Toast.makeText(this, "${address.name} is now your default address", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun deleteAddress(address: AddressModel) {
+        databaseRef.child(address.id).removeValue().addOnSuccessListener {
+            Toast.makeText(this, "Address deleted", Toast.LENGTH_SHORT).show()
+            // The ValueEventListener will trigger loadAddresses() automatically
+        }.addOnFailureListener { e ->
+            Log.e(TAG, "Failed to delete address: ${e.message}")
+            Toast.makeText(this, "Delete failed", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun editAddress(address: AddressModel) {
-        // Navigate to edit address screen with the selected address
-        // Intent to EditAddressActivity with address details as extras
-        // For example:
-        // val intent = Intent(this, EditAddressActivity::class.java)
-        // intent.putExtra("ADDRESS_ID", address.id)
-        // startActivity(intent)
-
-        // For now, we'll just show a message
-        android.widget.Toast.makeText(
-            this,
-            "Edit address: ${address.name}",
-            android.widget.Toast.LENGTH_SHORT
-        ).show()
+        val intent = Intent(this, AddAddress::class.java).apply {
+            putExtra("ADDRESS_ID", address.id)
+            putExtra("ADDRESS_NAME", address.name)
+            putExtra("ADDRESS_LINE1", address.line1)
+            putExtra("ADDRESS_LINE2", address.line2)
+            putExtra("ADDRESS_CITY", address.city)
+            putExtra("ADDRESS_STATE", address.state)
+            putExtra("ADDRESS_ZIP", address.zip)
+            putExtra("ADDRESS_COUNTRY", address.country)
+            putExtra("ADDRESS_PHONE", address.phone)
+            putExtra("ADDRESS_IS_DEFAULT", address.Default)
+        }
+        startActivity(intent)
     }
 
-    private fun setDefaultAddress(address: AddressModel) {
-        // Update the default address
-        addresses.forEach { it.isDefault = (it.id == address.id) }
-        addressAdapter.notifyDataSetChanged()
+    private fun updateUI() {
+        Log.d(TAG, "Updating UI with ${addresses.size} addresses")
 
-        // Here you would also update this in your data source
+        // Debug the actual addresses content
+        addresses.forEachIndexed { index, address ->
+            Log.d(TAG, "Address $index: ${address.name}, Default: ${address.Default}")
+        }
 
-        android.widget.Toast.makeText(
-            this,
-            "${address.name} is now your default address",
-            android.widget.Toast.LENGTH_SHORT
-        ).show()
+        if (addresses.isEmpty()) {
+            recyclerView.visibility = View.GONE
+            emptyStateText.visibility = View.VISIBLE
+            Log.d(TAG, "Showing empty state")
+        } else {
+            recyclerView.visibility = View.VISIBLE
+            emptyStateText.visibility = View.GONE
+            addressAdapter.notifyDataSetChanged()
+            Log.d(TAG, "Should be showing ${addresses.size} addresses in RecyclerView")
+        }
     }
 
-    private fun deleteAddress(address: AddressModel) {
-        // Remove the address from the list
-        addresses.removeIf { it.id == address.id }
-        updateUI()
-
-        // Here you would also delete it from your data source
-
-        android.widget.Toast.makeText(
-            this,
-            "Address deleted",
-            android.widget.Toast.LENGTH_SHORT
-        ).show()
-    }
-
-    private fun navigateToAddAddress() {
-        // Navigate to add address screen
-        // For example:
-        // val intent = Intent(this, AddAddressActivity::class.java)
-        // startActivity(intent)
-
-        // For now, we'll just show a message
-        android.widget.Toast.makeText(
-            this,
-            "Add new address",
-            android.widget.Toast.LENGTH_SHORT
-        ).show()
-    }
-
-    // RecyclerView Adapter for Addresses
     inner class AddressAdapter(
         private val addresses: List<AddressModel>,
         private val onEditClick: (AddressModel) -> Unit,
@@ -199,9 +224,9 @@ class Address : AppCompatActivity() {
             val cityStateTextView: TextView = view.findViewById(R.id.addressCityState)
             val zipCountryTextView: TextView = view.findViewById(R.id.addressZipCountry)
             val phoneTextView: TextView = view.findViewById(R.id.addressPhone)
-            val actionsMenu: ImageButton = view.findViewById(R.id.addressActionsMenu)
-            val editButton: Button = view.findViewById(R.id.editAddressButton)
             val setDefaultButton: Button = view.findViewById(R.id.setDefaultButton)
+            val editButton: Button = view.findViewById(R.id.editAddressButton)
+            val deleteButton: ImageButton = view.findViewById(R.id.deleteAddressButton)
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -210,81 +235,41 @@ class Address : AppCompatActivity() {
             return ViewHolder(view)
         }
 
-        override fun getItemCount() = addresses.size
-
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
             val address = addresses[position]
+            Log.d(TAG, "Binding address at position $position: ${address.name}")
 
-            holder.nameTextView.text = address.name
-            if (address.isDefault) {
-                holder.nameTextView.text = "${address.name} (Default)"
-            } else {
-                holder.nameTextView.text = address.name
-            }
-
+            holder.nameTextView.text = if (address.Default) "${address.name} (Default)" else address.name
             holder.line1TextView.text = address.line1
-
-            if (address.line2.isNullOrEmpty()) {
-                holder.line2TextView.visibility = View.GONE
-            } else {
-                holder.line2TextView.visibility = View.VISIBLE
-                holder.line2TextView.text = address.line2
+            holder.line2TextView.apply {
+                text = address.line2
+                visibility = if (address.line2.isNotEmpty()) View.VISIBLE else View.GONE
             }
-
             holder.cityStateTextView.text = "${address.city}, ${address.state}"
             holder.zipCountryTextView.text = "${address.zip}, ${address.country}"
-
-            if (address.phone.isNullOrEmpty()) {
-                holder.phoneTextView.visibility = View.GONE
-            } else {
-                holder.phoneTextView.visibility = View.VISIBLE
-                holder.phoneTextView.text = address.phone
+            holder.phoneTextView.apply {
+                text = address.phone
+                visibility = if (address.phone.isNotEmpty()) View.VISIBLE else View.GONE
             }
 
-            // Handle menu button click
-            holder.actionsMenu.setOnClickListener { view ->
-                showPopupMenu(view, address)
+            holder.setDefaultButton.apply {
+                text = if (address.Default) "Default" else "Set as Default"
+                isEnabled = !address.Default
+                setOnClickListener { onSetDefaultClick(address) }
             }
 
-            // Handle edit button click
             holder.editButton.setOnClickListener {
                 onEditClick(address)
             }
 
-            // Handle set default button click
-            holder.setDefaultButton.apply {
-                if (address.isDefault) {
-                    text = "Default"
-                    isEnabled = false
-                } else {
-                    text = "Set as Default"
-                    isEnabled = true
-                    setOnClickListener {
-                        onSetDefaultClick(address)
-                    }
-                }
+            holder.deleteButton.setOnClickListener {
+                onDeleteClick(address)
             }
         }
 
-        private fun showPopupMenu(view: View, address: AddressModel) {
-            val popup = PopupMenu(this@Address, view)
-            popup.menuInflater.inflate(R.menu.address_actions_menu, popup.menu)
-
-            popup.setOnMenuItemClickListener { menuItem ->
-                when (menuItem.itemId) {
-                    R.id.action_edit -> {
-                        onEditClick(address)
-                        true
-                    }
-                    R.id.action_delete -> {
-                        onDeleteClick(address)
-                        true
-                    }
-                    else -> false
-                }
-            }
-
-            popup.show()
+        override fun getItemCount(): Int {
+            Log.d(TAG, "getItemCount(): ${addresses.size}")
+            return addresses.size
         }
     }
 }

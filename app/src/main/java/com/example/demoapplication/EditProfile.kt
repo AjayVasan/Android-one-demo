@@ -2,43 +2,22 @@ package com.example.demoapplication
 
 import android.os.Bundle
 import android.widget.Button
-import android.widget.ImageButton
 import android.widget.Toast
-import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.textfield.TextInputEditText
+import com.google.firebase.database.FirebaseDatabase
 
 class EditProfile : AppCompatActivity() {
-    private lateinit var firstNameInput: TextInputEditText
-    private lateinit var lastNameInput: TextInputEditText
-    private lateinit var emailInput: TextInputEditText
-    private lateinit var phoneInput: TextInputEditText
-    private lateinit var saveButton: Button
-    private lateinit var changePhotoButton: ImageButton
-    private lateinit var profileImage: CircleImageView
-
-    annotation class CircleImageView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
         setContentView(R.layout.activity_edit_profile)
-//        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.)) { v, insets ->
-//            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-//            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
-//            insets
-//        }
-        supportActionBar?.hide() // Already using Toolbar
 
-        firstNameInput = findViewById(R.id.firstNameInput)
-        lastNameInput = findViewById(R.id.lastNameInput)
-        emailInput = findViewById(R.id.emailInput)
-        phoneInput = findViewById(R.id.phoneInput)
-        saveButton = findViewById(R.id.saveChangesButton)
-        changePhotoButton = findViewById(R.id.changePhotoButton)
-        profileImage = findViewById(R.id.profileImage)
+        val firstNameInput = findViewById<TextInputEditText>(R.id.firstNameInput)
+        val lastNameInput = findViewById<TextInputEditText>(R.id.lastNameInput)
+        val emailInput = findViewById<TextInputEditText>(R.id.emailInput)
+        val phoneInput = findViewById<TextInputEditText>(R.id.phoneInput)
+        val saveButton = findViewById<Button>(R.id.saveChangesButton)
 
         saveButton.setOnClickListener {
             val firstName = firstNameInput.text.toString().trim()
@@ -48,15 +27,41 @@ class EditProfile : AppCompatActivity() {
 
             if (firstName.isEmpty() || lastName.isEmpty() || email.isEmpty() || phone.isEmpty()) {
                 Toast.makeText(this, "Please fill all fields", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "Profile updated successfully!", Toast.LENGTH_SHORT).show()
-                // TODO: Save to database or SharedPreferences
+                return@setOnClickListener
             }
-        }
 
-        changePhotoButton.setOnClickListener {
-            Toast.makeText(this, "Change photo clicked", Toast.LENGTH_SHORT).show()
-            // TODO: Open gallery/camera intent here
+            val fullName = "$firstName $lastName"
+            val userData = mapOf(
+                "name" to fullName,
+                "email" to email,
+                "phone" to phone
+            )
+
+            val usersRef = FirebaseDatabase.getInstance().getReference("users")
+
+            // Search for existing user by email
+            usersRef.orderByChild("email").equalTo(email)
+                .get()
+                .addOnSuccessListener { snapshot ->
+                    if (snapshot.exists()) {
+                        var updated = false
+                        for (child in snapshot.children) {
+                            child.ref.updateChildren(userData)
+                                .addOnSuccessListener {
+                                    if (!updated) {
+                                        updated = true
+                                        Toast.makeText(this, "Profile updated!", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                                .addOnFailureListener {
+                                    Toast.makeText(this, "Update failed: ${it.message}", Toast.LENGTH_SHORT).show()
+                                }
+                        }
+                    }
+                }
+                .addOnFailureListener {
+                    Toast.makeText(this, "Error: ${it.message}", Toast.LENGTH_SHORT).show()
+                }
         }
     }
 }
